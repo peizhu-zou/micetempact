@@ -1,6 +1,10 @@
 # analysis.py
 import pandas as pd
-import matplotlib as plt
+import numpy as np
+import matplotlib.pyplot as plt
+from scipy.stats import ranksums
+import pywt
+
 
 # 1. Load data (FemTemp.csv, MaleTemp.csv, FemAct.csv, MaleAct.csv)
 fem_temp = pd.read_csv('FemTemp.csv', index_col='time (min)')
@@ -93,7 +97,80 @@ plt.tight_layout()
 plt.savefig('daily_range.png')
 print("Plot saved as daily_range.png!")
 # 4. Wavelet transforms + band power extraction (Paper 1)
+import pywt
+import os
+import time
 
+# ── Step 4: Wavelet analysis ────────────────────────────────────────
+
+def compute_cwt_bandpower(df, band_min_h, band_max_h, fs_per_hour=60):
+    """
+    Compute continuous wavelet transform and extract power in a frequency band.
+    band_min_h, band_max_h: period range in HOURS (e.g. 23-25 for circadian)
+    Returns a DataFrame of shape (n_timepoints, n_mice)
+    """
+    scales_min = band_min_h * fs_per_hour
+    scales_max = band_max_h * fs_per_hour
+    scales = np.arange(scales_min, scales_max)
+
+    band_power = {}
+    for mouse in df.columns:
+        print(f"  processing {mouse}...")
+        signal = df[mouse].values
+        coeffs, _ = pywt.cwt(signal, scales, 'cmor1.5-1.0')
+        power = np.mean(np.abs(coeffs)**2, axis=0)
+        band_power[mouse] = power
+
+    return pd.DataFrame(band_power, index=df.index)
+
+def compute_or_load(filepath, compute_fn, *args):
+    """Load from CSV if exists, otherwise compute and save."""
+    if os.path.exists(filepath):
+        print(f"Loading cached {filepath}...")
+        return pd.read_csv(filepath, index_col=0)
+    else:
+        print(f"Computing {filepath}...")
+        start = time.time()
+        result = compute_fn(*args)
+        result.to_csv(filepath)
+        print(f"Saved! took {(time.time()-start)/60:.1f} min")
+        return result
+
+# ── Compute or load from cache ──────────────────────────────────────
+fem_temp_circ  = compute_or_load('fem_temp_circ.csv',  compute_cwt_bandpower, fem_temp_clean,  23, 25)
+male_temp_circ = compute_or_load('male_temp_circ.csv', compute_cwt_bandpower, male_temp_clean, 23, 25)
+fem_temp_ultr  = compute_or_load('fem_temp_ultr.csv',  compute_cwt_bandpower, fem_temp_clean,  1, 3)
+male_temp_ultr = compute_or_load('male_temp_ultr.csv', compute_cwt_bandpower, male_temp_clean, 1, 3)
+
+# ── Compare median band powers between sexes ────────────────────────
+stat, p = ranksums(male_temp_ultr.median().values,
+                   fem_temp_ultr.median().values)
+print(f"Ultradian power — males median: {male_temp_ultr.median().mean():.4f} | "
+      f"females median: {fem_temp_ultr.median().mean():.4f} | p={p:.4f}")
+
+stat, p = ranksums(male_temp_circ.median().values,
+                   fem_temp_circ.median().values)
+print(f"Circadian power — males median: {male_temp_circ.median().mean():.4f} | "
+      f"females median: {fem_temp_circ.median().mean():.4f} | p={p:.4f}")
+
+# ── Plot ────────────────────────────────────────────────────────────
+fig, axes = plt.subplots(2, 1, figsize=(12, 6))
+
+axes[0].plot(male_temp_ultr.mean(axis=1).values, color='red',  label='Males')
+axes[0].plot(fem_temp_ultr.mean(axis=1).values,  color='blue', label='Females')
+axes[0].set_title('Ultradian Power (1-3h) over time')
+axes[0].set_ylabel('Power')
+axes[0].legend()
+
+axes[1].plot(male_temp_circ.mean(axis=1).values, color='red',  label='Males')
+axes[1].plot(fem_temp_circ.mean(axis=1).values,  color='blue', label='Females')
+axes[1].set_title('Circadian Power (23-25h) over time')
+axes[1].set_ylabel('Power')
+axes[1].legend()
+
+plt.tight_layout()
+plt.savefig('wavelet_power.png')
+print("Plot saved as wavelet_power.png!")
 # 5. Static vs dynamic error (Paper 2)
 
 # 6. Cumulative error accumulation curves (Paper 2)
