@@ -142,28 +142,37 @@ male_temp_circ = compute_or_load('male_temp_circ.csv', compute_cwt_bandpower, ma
 fem_temp_ultr  = compute_or_load('fem_temp_ultr.csv',  compute_cwt_bandpower, fem_temp_clean,  1, 3)
 male_temp_ultr = compute_or_load('male_temp_ultr.csv', compute_cwt_bandpower, male_temp_clean, 1, 3)
 
-# ── Compare median band powers between sexes ────────────────────────
-stat, p = ranksums(male_temp_ultr.median().values,
-                   fem_temp_ultr.median().values)
-print(f"Ultradian power — males median: {male_temp_ultr.median().mean():.4f} | "
-      f"females median: {fem_temp_ultr.median().mean():.4f} | p={p:.4f}")
+# ── Trim edge effects ───────────────────────────────────────────────  ← INSERT HERE
+TRIM   = 2880  # 24h for circadian
+TRIM_U = 180   # 3h for ultradian
 
-stat, p = ranksums(male_temp_circ.median().values,
-                   fem_temp_circ.median().values)
-print(f"Circadian power — males median: {male_temp_circ.median().mean():.4f} | "
-      f"females median: {fem_temp_circ.median().mean():.4f} | p={p:.4f}")
+fem_temp_circ_trim  = fem_temp_circ.iloc[TRIM:-TRIM]
+male_temp_circ_trim = male_temp_circ.iloc[TRIM:-TRIM]
+fem_temp_ultr_trim  = fem_temp_ultr.iloc[TRIM_U:-TRIM_U]
+male_temp_ultr_trim = male_temp_ultr.iloc[TRIM_U:-TRIM_U]
 
-# ── Plot ────────────────────────────────────────────────────────────
+# ── Compare median band powers between sexes ────────────────────────  ← UPDATE TO USE TRIMMED
+stat, p = ranksums(male_temp_ultr_trim.median().values,
+                   fem_temp_ultr_trim.median().values)
+print(f"Ultradian power — males median: {male_temp_ultr_trim.median().mean():.4f} | "
+      f"females median: {fem_temp_ultr_trim.median().mean():.4f} | p={p:.4f}")
+
+stat, p = ranksums(male_temp_circ_trim.median().values,
+                   fem_temp_circ_trim.median().values)
+print(f"Circadian power — males median: {male_temp_circ_trim.median().mean():.4f} | "
+      f"females median: {fem_temp_circ_trim.median().mean():.4f} | p={p:.4f}")
+
+# ── Plot ────────────────────────────────────────────────────────────  ← UPDATE TO USE TRIMMED
 fig, axes = plt.subplots(2, 1, figsize=(12, 6))
 
-axes[0].plot(male_temp_ultr.mean(axis=1).values, color='red',  label='Males')
-axes[0].plot(fem_temp_ultr.mean(axis=1).values,  color='blue', label='Females')
+axes[0].plot(male_temp_ultr_trim.mean(axis=1).values, color='red',  label='Males')
+axes[0].plot(fem_temp_ultr_trim.mean(axis=1).values,  color='blue', label='Females')
 axes[0].set_title('Ultradian Power (1-3h) over time')
 axes[0].set_ylabel('Power')
 axes[0].legend()
 
-axes[1].plot(male_temp_circ.mean(axis=1).values, color='red',  label='Males')
-axes[1].plot(fem_temp_circ.mean(axis=1).values,  color='blue', label='Females')
+axes[1].plot(male_temp_circ_trim.mean(axis=1).values, color='red',  label='Males')
+axes[1].plot(fem_temp_circ_trim.mean(axis=1).values,  color='blue', label='Females')
 axes[1].set_title('Circadian Power (23-25h) over time')
 axes[1].set_ylabel('Power')
 axes[1].legend()
