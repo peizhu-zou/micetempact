@@ -24,5 +24,5 @@ for i, (ax, col) in enumerate(zip(axes, mouse_cols)):
 
 axes[-1].set_xlabel('Time (days)', fontsize=10)
 plt.tight_layout()
-plt.savefig(r'C:\Users\pzou5\OneDrive\Documents\githubrepo\micetempact\female_temp.png', dpi=150, bbox_inches='tight')  # ← 改这里
+plt.savefig(r'C:\Users\pzou5\OneDrive\Documents\githubrepo\micetempact\female_temp.png', dpi=150, bbox_inches='tight')
 print("bro fuck my stupid chud life")
