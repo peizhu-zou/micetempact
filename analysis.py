@@ -4,9 +4,10 @@ import numpy as np
 import matplotlib.pyplot as plt
 from scipy.stats import ranksums
 import pywt
+from morse_wavelet import compute_bandpower, compute_or_load
 
 
-# 1. Load data (FemTemp.csv, MaleTemp.csv, FemAct.csv, MaleAct.csv)
+# 1. Load data 
 fem_temp = pd.read_csv('FemTemp.csv', index_col='time (min)')
 male_temp = pd.read_csv('MaleTemp.csv', index_col='time (min)')
 fem_act  = pd.read_csv('FemAct.csv',  index_col='time (min)')
@@ -19,8 +20,8 @@ for name, df in [('FemTemp', fem_temp), ('MaleTemp', male_temp), ('FemAct',  fem
 # 2. Data cleaning (clip outliers, handle missing values)
 def clean_temp(df):
     df = df.copy()          # make a copy so we don't modify the original
-    df[df < 35] = 35        # any temperature below 35°C gets set TO 35
-                            # (paper says these are device malfunctions)
+    df[df < 35] = 35        # any temperature below 35°C gets set TO 35 as 
+                            # it's because device malfunctions
     mean = df.mean()        # calculate average of each mouse's column
     std  = df.std()         # calculate standard deviation of each column
     df = df.clip(lower=mean - 3*std, upper=mean + 3*std, axis = 1)  
@@ -35,13 +36,14 @@ def clean_act(df):
     df = df.clip(upper=mean + 3*std, axis = 1)   # only clip HIGH values
                                         # we don't clip low values because
                                         # activity = 0 is totally normal
-                                        # (mouse is sleeping!)
+                                        #sleeeeeeeeeeeeeeeeeeeep
     return df
 
 fem_temp_clean  = clean_temp(fem_temp)   # cleaned version of female temps
 male_temp_clean = clean_temp(male_temp)  # cleaned version of male temps
 fem_act_clean   = clean_act(fem_act)     # cleaned version of female activity
 male_act_clean  = clean_act(male_act)    # cleaned version of male activity
+
 # 3. Daily range analysis (Paper 1)
 import matplotlib.pyplot as plt # type: ignore
 from scipy.stats import ranksums   # type: ignore # for Wilcoxon rank sum test
@@ -103,87 +105,83 @@ import time
 
 # ── Step 4: Wavelet analysis ────────────────────────────────────────
 
-def compute_cwt_bandpower(df, band_min_h, band_max_h, fs_per_hour=60):
-    """
-    Compute continuous wavelet transform and extract power in a frequency band.
-    band_min_h, band_max_h: period range in HOURS (e.g. 23-25 for circadian)
-    Returns a DataFrame of shape (n_timepoints, n_mice)
-    """
-    scales_min = band_min_h * fs_per_hour
-    scales_max = band_max_h * fs_per_hour
-    scales = np.arange(scales_min, scales_max)
+TRIM_CIRC = 1440   # trim 1 day from each end for circadian band (edge effects)
+TRIM_ULTR = 180    # trim 3 h  from each end for ultradian band
 
-    band_power = {}
-    for mouse in df.columns:
-        print(f"  processing {mouse}...")
-        signal = df[mouse].values
-        coeffs, _ = pywt.cwt(signal, scales, 'cmor1.5-1.0')
-        power = np.mean(np.abs(coeffs)**2, axis=0)
-        band_power[mouse] = power
+# ── Temperature ─────────────────────────────────────────────────────
+print("Computing wavelet band power (temperature)...")
 
-    return pd.DataFrame(band_power, index=df.index)
+fem_temp_circ  = compute_or_load('fem_temp_circ.csv',  compute_bandpower,
+                                  fem_temp_clean,  23, 25)
+male_temp_circ = compute_or_load('male_temp_circ.csv', compute_bandpower,
+                                  male_temp_clean, 23, 25)
+fem_temp_ultr  = compute_or_load('fem_temp_ultr.csv',  compute_bandpower,
+                                  fem_temp_clean,  1,  3)
+male_temp_ultr = compute_or_load('male_temp_ultr.csv', compute_bandpower,
+                                  male_temp_clean, 1,  3)
 
-def compute_or_load(filepath, compute_fn, *args):
-    """Load from CSV if exists, otherwise compute and save."""
-    if os.path.exists(filepath):
-        print(f"Loading cached {filepath}...")
-        return pd.read_csv(filepath, index_col=0)
-    else:
-        print(f"Computing {filepath}...")
-        start = time.time()
-        result = compute_fn(*args)
-        result.to_csv(filepath)
-        print(f"Saved! took {(time.time()-start)/60:.1f} min")
-        return result
+# ── Activity ─────────────────────────────────────────────────────────
+print("Computing wavelet band power (activity)...")
 
-# ── Compute or load from cache ──────────────────────────────────────
-fem_temp_circ  = compute_or_load('fem_temp_circ.csv',  compute_cwt_bandpower, fem_temp_clean,  23, 25)
-male_temp_circ = compute_or_load('male_temp_circ.csv', compute_cwt_bandpower, male_temp_clean, 23, 25)
-fem_temp_ultr  = compute_or_load('fem_temp_ultr.csv',  compute_cwt_bandpower, fem_temp_clean,  1, 3)
-male_temp_ultr = compute_or_load('male_temp_ultr.csv', compute_cwt_bandpower, male_temp_clean, 1, 3)
+fem_act_circ   = compute_or_load('fem_act_circ.csv',   compute_bandpower,
+                                  fem_act_clean,   23, 25)
+male_act_circ  = compute_or_load('male_act_circ.csv',  compute_bandpower,
+                                  male_act_clean,  23, 25)
+fem_act_ultr   = compute_or_load('fem_act_ultr.csv',   compute_bandpower,
+                                  fem_act_clean,   1,  3)
+male_act_ultr  = compute_or_load('male_act_ultr.csv',  compute_bandpower,
+                                  male_act_clean,  1,  3)
 
-# ── Trim edge effects ───────────────────────────────────────────────  ← INSERT HERE
-TRIM   = 2880  # 24h for circadian
-TRIM_U = 180   # 3h for ultradian
+# ── Trim edge effects ────────────────────────────────────────────────
+fem_temp_circ_trim  = fem_temp_circ.iloc[TRIM_CIRC:-TRIM_CIRC]
+male_temp_circ_trim = male_temp_circ.iloc[TRIM_CIRC:-TRIM_CIRC]
+fem_temp_ultr_trim  = fem_temp_ultr.iloc[TRIM_ULTR:-TRIM_ULTR]
+male_temp_ultr_trim = male_temp_ultr.iloc[TRIM_ULTR:-TRIM_ULTR]
 
-fem_temp_circ_trim  = fem_temp_circ.iloc[TRIM:-TRIM]
-male_temp_circ_trim = male_temp_circ.iloc[TRIM:-TRIM]
-fem_temp_ultr_trim  = fem_temp_ultr.iloc[TRIM_U:-TRIM_U]
-male_temp_ultr_trim = male_temp_ultr.iloc[TRIM_U:-TRIM_U]
+fem_act_circ_trim   = fem_act_circ.iloc[TRIM_CIRC:-TRIM_CIRC]
+male_act_circ_trim  = male_act_circ.iloc[TRIM_CIRC:-TRIM_CIRC]
+fem_act_ultr_trim   = fem_act_ultr.iloc[TRIM_ULTR:-TRIM_ULTR]
+male_act_ultr_trim  = male_act_ultr.iloc[TRIM_ULTR:-TRIM_ULTR]
 
-# ── Compare median band powers between sexes ────────────────────────  ← UPDATE TO USE TRIMMED
-stat, p = ranksums(male_temp_ultr_trim.median().values,
-                   fem_temp_ultr_trim.median().values)
-print(f"Ultradian power — males median: {male_temp_ultr_trim.median().mean():.4f} | "
-      f"females median: {fem_temp_ultr_trim.median().mean():.4f} | p={p:.4f}")
+# ── Statistical comparison (Wilcoxon rank sum, per-mouse medians) ────
+from scipy.stats import ranksums
 
-stat, p = ranksums(male_temp_circ_trim.median().values,
-                   fem_temp_circ_trim.median().values)
-print(f"Circadian power — males median: {male_temp_circ_trim.median().mean():.4f} | "
-      f"females median: {fem_temp_circ_trim.median().mean():.4f} | p={p:.4f}")
+results = [
+    ("Temp ultradian",  male_temp_ultr_trim, fem_temp_ultr_trim),
+    ("Temp circadian",  male_temp_circ_trim, fem_temp_circ_trim),
+    ("Act  ultradian",  male_act_ultr_trim,  fem_act_ultr_trim),
+    ("Act  circadian",  male_act_circ_trim,  fem_act_circ_trim),
+]
 
-# ── Plot ────────────────────────────────────────────────────────────  ← UPDATE TO USE TRIMMED
-fig, axes = plt.subplots(2, 1, figsize=(12, 6))
+print("\nWilcoxon rank sum — per-mouse median band power (males vs females):")
+for label, male_df, fem_df in results:
+    m_med = male_df.median().values   # one median per mouse
+    f_med = fem_df.median().values
+    stat, p = ranksums(m_med, f_med)
+    print(f"  {label:20s}  males: {m_med.mean():.4f}  females: {f_med.mean():.4f}  p={p:.4f}")
 
-axes[0].plot(male_temp_ultr_trim.mean(axis=1).values, color='red',  label='Males')
-axes[0].plot(fem_temp_ultr_trim.mean(axis=1).values,  color='blue', label='Females')
-axes[0].set_title('Ultradian Power (1-3h) over time')
-axes[0].set_ylabel('Power')
-axes[0].legend()
+# ── Plot ─────────────────────────────────────────────────────────────
+import matplotlib.pyplot as plt
 
-axes[1].plot(male_temp_circ_trim.mean(axis=1).values, color='red',  label='Males')
-axes[1].plot(fem_temp_circ_trim.mean(axis=1).values,  color='blue', label='Females')
-axes[1].set_title('Circadian Power (23-25h) over time')
-axes[1].set_ylabel('Power')
-axes[1].legend()
+fig, axes = plt.subplots(2, 2, figsize=(14, 8))
 
+plot_data = [
+    (axes[0,0], male_temp_ultr_trim, fem_temp_ultr_trim, 'Temp Ultradian Power (1–3h)'),
+    (axes[0,1], male_temp_circ_trim, fem_temp_circ_trim, 'Temp Circadian Power (23–25h)'),
+    (axes[1,0], male_act_ultr_trim,  fem_act_ultr_trim,  'Activity Ultradian Power (1–3h)'),
+    (axes[1,1], male_act_circ_trim,  fem_act_circ_trim,  'Activity Circadian Power (23–25h)'),
+]
+
+for ax, male_df, fem_df, title in plot_data:
+    ax.plot(male_df.mean(axis=1).values, color='red',  label='Males',   linewidth=1.2)
+    ax.plot(fem_df.mean(axis=1).values,  color='blue', label='Females', linewidth=1.2)
+    ax.set_title(title)
+    ax.set_xlabel('Time (min)')
+    ax.set_ylabel('Max power')
+    ax.legend(fontsize=8)
+
+plt.suptitle('Morse Wavelet Band Power — Males vs Females\n(Paper 1 replication)',
+             fontsize=13, fontweight='bold')
 plt.tight_layout()
-plt.savefig('wavelet_power.png')
-print("Plot saved as wavelet_power.png!")
-# 5. Static vs dynamic error (Paper 2)
-
-# 6. Cumulative error accumulation curves (Paper 2)
-
-# 7. Dynamic time warping between days (Paper 2)
-
-# 8. Plots
+plt.savefig('wavelet_power_morse.png', dpi=150, bbox_inches='tight')
+print("\nSaved: wavelet_power_morse.png")
