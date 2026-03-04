@@ -1,44 +1,49 @@
-# analysis.py
-import pandas as pd
 import numpy as np
+import pandas as pd
 import matplotlib.pyplot as plt
-from scipy.stats import ranksums
 
+# Load data
+df = pd.read_csv('micetempact\FemTemp.csv')
+mice = [c for c in df.columns if c != 'time (min)']
 
+n_days = 8
+mins_per_day = 1440
 
-# 1. Load data (FemTemp.csv, MaleTemp.csv, FemAct.csv, MaleAct.csv)
-fem_temp = pd.read_csv('FemTemp.csv', index_col='time (min)')
-male_temp = pd.read_csv('MaleTemp.csv', index_col='time (min)')
-fem_act  = pd.read_csv('FemAct.csv',  index_col='time (min)')
-male_act = pd.read_csv('MaleAct.csv', index_col='time (min)')
+# Plot
+fig, axes = plt.subplots(7, 2, figsize=(14, 20))
+axes = axes.flatten()
 
-for name, df in [('FemTemp', fem_temp), ('MaleTemp', male_temp), ('FemAct',  fem_act),  ('MaleAct',  male_act)]:
-    print(f"{name}: {df.shape} | days: {len(df)/1440:.1f} | mice: {df.shape[1]}")
+for idx, mouse in enumerate(mice):
+    ax = axes[idx]
+    temps = df[mouse].values
 
+    daily_max = []
+    for day in range(n_days):
+        day_data = temps[day*mins_per_day:(day+1)*mins_per_day]
+        daily_max.append(np.nanmax(day_data))
 
-# 2. Data cleaning (clip outliers, handle missing values)
-def clean_temp(df):
-    df = df.copy()          # make a copy so we don't modify the original
-    df[df < 35] = 35        # any temperature below 35°C gets set TO 35
-                            # (paper says these are device malfunctions)
-    mean = df.mean()        # calculate average of each mouse's column
-    std  = df.std()         # calculate standard deviation of each column
-    df = df.clip(lower=mean - 3*std, upper=mean + 3*std, axis = 1)  
-                            # anything more than 3 standard deviations 
-                            # from the mean gets clipped to that boundary
-    return df               # return the cleaned table
+    days = np.arange(1, n_days+1)
+    bars = ax.bar(days, daily_max, color='steelblue', alpha=0.7, edgecolor='white')
 
-def clean_act(df):
-    df = df.copy()
-    mean = df.mean()
-    std  = df.std()
-    df = df.clip(upper=mean + 3*std, axis = 1)   # only clip HIGH values
-                                        # we don't clip low values because
-                                        # activity = 0 is totally normal
-                                        # (mouse is sleeping!)
-    return df
+    # Highlight the day with max temp in red
+    peak_day = np.argmax(daily_max) + 1
+    bars[peak_day-1].set_color('crimson')
+    bars[peak_day-1].set_alpha(1.0)
 
-fem_temp_clean  = clean_temp(fem_temp)   # cleaned version of female temps
-male_temp_clean = clean_temp(male_temp)  # cleaned version of male temps
-fem_act_clean   = clean_act(fem_act)     # cleaned version of female activity
-male_act_clean  = clean_act(male_act)    # cleaned version of male activity
+    ax.set_title(f'{mouse} — peak day: {peak_day}', fontsize=11)
+    ax.set_xlabel('Day')
+    ax.set_ylabel('Max CBT (°C)')
+    ax.set_xticks(days)
+    ax.set_ylim(38, 40.5)
+
+plt.suptitle('Daily Maximum CBT per Female Mouse\n(red = peak day)', fontsize=14, fontweight='bold', y=1.01)
+plt.tight_layout()
+plt.savefig('fem_daily_max_temp.png', dpi=150, bbox_inches='tight')
+plt.show()
+
+# Print peak days to console
+print("Peak days:")
+for mouse in mice:
+    temps = df[mouse].values
+    daily_max = [np.nanmax(temps[d*mins_per_day:(d+1)*mins_per_day]) for d in range(n_days)]
+    print(f"  {mouse}: day {np.argmax(daily_max)+1} ({max(daily_max):.2f}°C)")
