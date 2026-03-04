@@ -105,7 +105,7 @@ import time
 
 # ── Step 4: Wavelet analysis ────────────────────────────────────────
 
-TRIM_CIRC = 1440   # trim 1 day from each end for circadian band (edge effects)
+TRIM_CIRC = 2160   # trim 1.5 day from each end for circadian band (edge effects)
 TRIM_ULTR = 180    # trim 3 h  from each end for ultradian band
 
 # ── Temperature ─────────────────────────────────────────────────────
@@ -183,5 +183,5 @@ for ax, male_df, fem_df, title in plot_data:
 plt.suptitle('Morse Wavelet Band Power — Males vs Females\n(Paper 1 replication)',
              fontsize=13, fontweight='bold')
 plt.tight_layout()
-plt.savefig('wavelet_power_morse.png', dpi=150, bbox_inches='tight')
+plt.savefig('wavelet_power_morse_trim_1andhalf_day.png', dpi=150, bbox_inches='tight')
 print("\nSaved: wavelet_power_morse.png")
